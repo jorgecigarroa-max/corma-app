@@ -994,13 +994,14 @@ export interface Expediente {
   giro: ServiceType;
   cls: ClientClass;
   policy: PolicyKind;
-  policyStart: string;
-  policyEnd: string;
+  policyStart: string; // ISO (YYYY-MM-DD) para el calendario nativo
+  policyEnd: string; // ISO; "" = sin vigencia (evento único)
   freq: string;
   contact: string;
   phone: string;
   email: string;
   addr: string;
+  web?: string; // sitio web del cliente
   rfc: string;
   notes: string;
   avail: Availability; // disponibilidad y variantes de programación
@@ -1023,13 +1024,14 @@ export const expedientes: Expediente[] = [
     giro: "Comercial",
     cls: "Cautivo",
     policy: "Iguala mensual",
-    policyStart: "15 mar 2024",
-    policyEnd: "15 mar 2027",
+    policyStart: "2024-03-15",
+    policyEnd: "2027-03-15",
     freq: "Mensual · 12 visitas/año",
     contact: "Gerardo Luna · Gerente de mantenimiento",
     phone: "871 204 1187",
     email: "mantenimiento@posadadelrio.mx",
     addr: "Blvd. Miguel Alemán 1204, Gómez Palacio",
+    web: "posadadelrio.mx",
     rfc: "HPR-940312-K71",
     notes: "Acceso por andén de servicio; avisar a recepción 30 min antes. Cocina se trata después de las 10:00.",
     avail: { mode: "Cualquier día hábil", windows: [], channel: "WhatsApp", notifyContact: "Gerardo Luna", notifyPhone: "871 204 1187", zone: "Local", route: "Ruta Centro" },
@@ -1048,13 +1050,14 @@ export const expedientes: Expediente[] = [
     giro: "Industrial",
     cls: "Cautivo",
     policy: "Póliza semanal",
-    policyStart: "1 feb 2023",
-    policyEnd: "31 ene 2027",
+    policyStart: "2023-02-01",
+    policyEnd: "2027-01-31",
     freq: "Semanal · protocolo BPP",
     contact: "Ing. Paola Cedillo · Jefa de inocuidad",
     phone: "871 318 4455",
     email: "inocuidad.norte@lala.com.mx",
     addr: "P.I. Lagunero, Gómez Palacio",
+    web: "lala.com.mx",
     rfc: "BLN-020714-QA3",
     notes: "Sitio BPP: evidencia sellada obligatoria en cada visita; bitácora por estación firmada por supervisor de planta. Auditoría anual en noviembre.",
     avail: { mode: "Fecha fija pactada", windows: [], channel: "Correo", notifyContact: "Ing. Paola Cedillo", notifyPhone: "871 318 4455", zone: "Local", route: "Ruta Norte industrial" },
@@ -1071,13 +1074,14 @@ export const expedientes: Expediente[] = [
     giro: "Industrial",
     cls: "Cautivo",
     policy: "Contrato anual",
-    policyStart: "9 ene 2026",
-    policyEnd: "9 ene 2027",
+    policyStart: "2026-01-09",
+    policyEnd: "2027-01-09",
     freq: "Mensual · 46 estaciones roedor",
     contact: "Lic. Mario Talamantes · Gerente de patio",
     phone: "871 750 2210",
     email: "patio@tgl.mx",
     addr: "Periférico km 14.5, Lerdo, Dgo.",
+    web: "tgl.mx",
     rfc: "TGL-880130-HH0",
     notes: "Recorrido mensual de estaciones cebaderas (vista Estaciones). Acceso con gafete; caseta pide orden de servicio impresa o en app.",
     avail: { mode: "Cuando el cliente nos avise", windows: [{ fromDay: "15", toDay: "20", fromHour: "20:00" }], channel: "WhatsApp", notifyContact: "Lic. Mario Talamantes", notifyPhone: "871 750 2210", zone: "Local", route: "Ruta Lerdo" },
@@ -1094,8 +1098,8 @@ export const expedientes: Expediente[] = [
     giro: "Residencial",
     cls: "Nuevo",
     policy: "Evento único",
-    policyStart: "12 ago 2026",
-    policyEnd: "—",
+    policyStart: "2026-08-12",
+    policyEnd: "",
     freq: "Eventual · seguimiento a 21 días",
     contact: "Sra. Leticia Nava · Propietaria",
     phone: "871 226 7741",
@@ -1114,13 +1118,14 @@ export const expedientes: Expediente[] = [
     giro: "Agropecuario",
     cls: "Cautivo",
     policy: "Iguala mensual",
-    policyStart: "3 may 2023",
-    policyEnd: "3 may 2027",
+    policyStart: "2023-05-03",
+    policyEnd: "2027-05-03",
     freq: "Mensual · protocolo pecuario",
     contact: "MVZ. Homero Cázares · Administrador",
     phone: "871 442 9083",
     email: "admon@establosanrafael.mx",
     addr: "Ejido La Concha, Matamoros",
+    web: "establosanrafael.mx",
     rfc: "ESR-050503-3B9",
     notes: "Unidad de producción con BPP SENASICA: registro sanitario en cada visita. Mosca de establo estacional may–sep; roedor en silos.",
     avail: { mode: "Fecha fija pactada", windows: [], channel: "Llamada", notifyContact: "MVZ. Homero Cázares", notifyPhone: "871 442 9083", zone: "Foráneo", route: "Ruta agropecuaria" },

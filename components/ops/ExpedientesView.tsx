@@ -17,9 +17,28 @@ const emptyForm = {
   phone: "",
   email: "",
   addr: "",
+  web: "",
   rfc: "",
   notes: "",
 };
+
+// Saltos rápidos desde los campos capturados
+const mapsHref = (addr: string) => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(addr)}`;
+const waHref = (phone: string) => {
+  const d = phone.replace(/\D/g, "");
+  return `https://wa.me/${d.length === 10 ? "52" + d : d}`;
+};
+const webHref = (url: string) => (/^https?:\/\//.test(url) ? url : `https://${url}`);
+
+const monthsEs = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+/** "2026-09-28" → "28 sep 2026" (para mostrar fechas del calendario en el historial). */
+const fmtISO = (iso: string) => {
+  const [y, m, d] = iso.split("-");
+  return m ? `${+d} ${monthsEs[+m - 1]} ${y}` : iso;
+};
+const todayISO = () => new Date().toISOString().slice(0, 10);
+
+type FieldType = "text" | "date" | "tel" | "email" | "url";
 
 function Field({
   label,
@@ -27,24 +46,48 @@ function Field({
   onChange,
   wide,
   placeholder,
+  type = "text",
+  upper,
+  maxLength,
+  link,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   wide?: boolean;
   placeholder?: string;
+  type?: FieldType;
+  upper?: boolean; // fuerza mayúsculas (RFC)
+  maxLength?: number;
+  link?: { label: string; href: string } | null; // botón de salto (Maps, WhatsApp, abrir sitio…)
 }) {
   return (
     <label className={`block ${wide ? "col-span-2" : ""}`}>
       <span className="mb-[3px] block text-[10px] font-semibold uppercase leading-none tracking-[.06em] text-ink-7">
         {label}
       </span>
-      <input
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        className="h-8 w-full rounded-[8px] border border-line-2 bg-white px-2 text-xs font-semibold outline-none focus:border-brand"
-      />
+      <div className="flex gap-[6px]">
+        <input
+          type={type}
+          inputMode={type === "tel" ? "tel" : type === "email" ? "email" : undefined}
+          value={value}
+          onChange={(e) => onChange(upper ? e.target.value.toUpperCase() : e.target.value)}
+          placeholder={placeholder}
+          maxLength={maxLength}
+          className="h-8 w-full min-w-0 flex-1 cursor-text rounded-[8px] border border-line-2 bg-white px-2 text-xs font-semibold outline-none focus:border-brand invalid:border-[#e2a5a8]"
+        />
+        {link && value.trim() && (
+          <a
+            href={link.href}
+            target="_blank"
+            rel="noreferrer"
+            title={link.label}
+            className="flex h-8 flex-none items-center rounded-[8px] border border-line-2 bg-soft-3 px-2 text-[10px] font-bold text-ink-3 hover:border-brand hover:text-brand"
+          >
+            {link.label} ↗
+          </a>
+        )}
+      </div>
     </label>
   );
 }
@@ -167,7 +210,7 @@ function AvailabilityForm({ value, onChange, compact }: { value: Availability; o
         </div>
         <div className="grid grid-cols-2 gap-2">
           <Field label="Quién avisa" value={value.notifyContact} onChange={(v) => set({ notifyContact: v })} placeholder="Nombre" />
-          <Field label="Teléfono / WhatsApp" value={value.notifyPhone} onChange={(v) => set({ notifyPhone: v })} placeholder="871 …" />
+          <Field type="tel" label="Teléfono / WhatsApp" value={value.notifyPhone} onChange={(v) => set({ notifyPhone: v })} placeholder="871 000 0000" />
         </div>
       </div>
 
@@ -206,6 +249,7 @@ export function ExpedientesView() {
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [addingEvent, setAddingEvent] = useState(false);
   const [evKind, setEvKind] = useState<ExpEventKind>("Seguimiento");
+  const [evDate, setEvDate] = useState(todayISO());
   const [evTitle, setEvTitle] = useState("");
   const [evDetail, setEvDetail] = useState("");
 
@@ -229,7 +273,7 @@ export function ExpedientesView() {
       giro: form.giro as Expediente["giro"],
       cls: form.cls as Expediente["cls"],
       policy: form.policy as Expediente["policy"],
-      policyEnd: form.policyEnd || "—",
+      policyEnd: form.policyEnd,
       rfc: form.rfc || "—",
       avail: { ...avail, route: avail.route || routeOptions[0] },
       events: [],
@@ -243,9 +287,15 @@ export function ExpedientesView() {
 
   const addEvent = () => {
     if (!evTitle.trim()) return;
-    const ev: ExpEvent = { date: "hoy", kind: evKind, title: evTitle, detail: evDetail || "Capturado desde el panel." };
+    const ev: ExpEvent = {
+      date: fmtISO(evDate || todayISO()),
+      kind: evKind,
+      title: evTitle,
+      detail: evDetail || "Capturado desde el panel.",
+    };
     patchSel({ events: [ev, ...sel.events] });
     setAddingEvent(false);
+    setEvDate(todayISO());
     setEvTitle("");
     setEvDetail("");
   };
@@ -320,13 +370,14 @@ export function ExpedientesView() {
               <Select label="Clasificación" value={form.cls} options={["Cautivo", "Nuevo"]} onChange={(v) => setForm((f) => ({ ...f, cls: v }))} />
               <Select label="Tipo de póliza" value={form.policy} options={["Iguala mensual", "Póliza semanal", "Contrato anual", "Evento único"]} onChange={(v) => setForm((f) => ({ ...f, policy: v }))} />
               <Field label="Frecuencia" value={form.freq} onChange={(v) => setForm((f) => ({ ...f, freq: v }))} placeholder="Ej. Mensual · 12 visitas/año" />
-              <Field label="Vigencia desde" value={form.policyStart} onChange={(v) => setForm((f) => ({ ...f, policyStart: v }))} placeholder="Ej. 1 oct 2026" />
-              <Field label="Vigencia hasta" value={form.policyEnd} onChange={(v) => setForm((f) => ({ ...f, policyEnd: v }))} placeholder="Ej. 1 oct 2027" />
+              <Field type="date" label="Vigencia desde" value={form.policyStart} onChange={(v) => setForm((f) => ({ ...f, policyStart: v }))} />
+              <Field type="date" label="Vigencia hasta" value={form.policyEnd} onChange={(v) => setForm((f) => ({ ...f, policyEnd: v }))} />
               <Field label="Contacto" value={form.contact} onChange={(v) => setForm((f) => ({ ...f, contact: v }))} placeholder="Nombre · puesto" />
-              <Field label="Teléfono" value={form.phone} onChange={(v) => setForm((f) => ({ ...f, phone: v }))} />
-              <Field label="Correo" value={form.email} onChange={(v) => setForm((f) => ({ ...f, email: v }))} />
-              <Field label="RFC" value={form.rfc} onChange={(v) => setForm((f) => ({ ...f, rfc: v }))} />
-              <Field wide label="Dirección del sitio" value={form.addr} onChange={(v) => setForm((f) => ({ ...f, addr: v }))} />
+              <Field type="tel" label="Teléfono" value={form.phone} onChange={(v) => setForm((f) => ({ ...f, phone: v }))} placeholder="871 000 0000" link={{ label: "WhatsApp", href: waHref(form.phone) }} />
+              <Field type="email" label="Correo" value={form.email} onChange={(v) => setForm((f) => ({ ...f, email: v }))} placeholder="correo@cliente.mx" link={{ label: "Escribir", href: `mailto:${form.email}` }} />
+              <Field upper maxLength={13} label="RFC" value={form.rfc} onChange={(v) => setForm((f) => ({ ...f, rfc: v }))} placeholder="AAA-000000-XX0" />
+              <Field type="url" label="Sitio web" value={form.web} onChange={(v) => setForm((f) => ({ ...f, web: v }))} placeholder="www.cliente.mx" link={{ label: "Abrir", href: webHref(form.web) }} />
+              <Field wide label="Dirección del sitio" value={form.addr} onChange={(v) => setForm((f) => ({ ...f, addr: v }))} placeholder="Calle y número, colonia, ciudad" link={{ label: "Maps", href: mapsHref(form.addr) }} />
               <Field wide label="Notas de acceso / condiciones" value={form.notes} onChange={(v) => setForm((f) => ({ ...f, notes: v }))} />
             </div>
 
@@ -371,10 +422,13 @@ export function ExpedientesView() {
 
               {addingEvent && (
                 <div className="mt-3 rounded-[10px] border border-line-3 bg-soft-3 p-3">
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-3 gap-2">
                     <Select label="Tipo de evento" value={evKind} options={kinds} onChange={(v) => setEvKind(v as ExpEventKind)} />
+                    <Field type="date" label="Fecha (para antecedentes)" value={evDate} onChange={setEvDate} />
                     <Field label="Título" value={evTitle} onChange={setEvTitle} placeholder="Ej. Llamada de seguimiento" />
-                    <Field wide label="Detalle" value={evDetail} onChange={setEvDetail} placeholder="Qué se hizo / acordó" />
+                    <div className="col-span-3">
+                      <Field wide label="Detalle" value={evDetail} onChange={setEvDetail} placeholder="Qué se hizo / acordó" />
+                    </div>
                   </div>
                   <button
                     onClick={addEvent}
@@ -429,8 +483,8 @@ export function ExpedientesView() {
                   <Pill bg="#fdeced" fg="#cb2027">{sel.policy}</Pill>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
-                  <Field label="Vigencia desde" value={sel.policyStart} onChange={(v) => patchSel({ policyStart: v })} />
-                  <Field label="Vigencia hasta" value={sel.policyEnd} onChange={(v) => patchSel({ policyEnd: v })} />
+                  <Field type="date" label="Vigencia desde" value={sel.policyStart} onChange={(v) => patchSel({ policyStart: v })} />
+                  <Field type="date" label="Vigencia hasta" value={sel.policyEnd} onChange={(v) => patchSel({ policyEnd: v })} />
                   <Field wide label="Frecuencia pactada" value={sel.freq} onChange={(v) => patchSel({ freq: v })} />
                 </div>
                 <div className="mt-2 rounded-[8px] bg-soft-3 px-[10px] py-2 text-[10.5px] font-medium leading-[1.4] text-ink-6">
@@ -463,11 +517,12 @@ export function ExpedientesView() {
                 <div className="grid grid-cols-1 gap-2">
                   <Field label="Contacto" value={sel.contact} onChange={(v) => patchSel({ contact: v })} />
                   <div className="grid grid-cols-2 gap-2">
-                    <Field label="Teléfono" value={sel.phone} onChange={(v) => patchSel({ phone: v })} />
-                    <Field label="RFC" value={sel.rfc} onChange={(v) => patchSel({ rfc: v })} />
+                    <Field type="tel" label="Teléfono" value={sel.phone} onChange={(v) => patchSel({ phone: v })} link={{ label: "WA", href: waHref(sel.phone) }} />
+                    <Field upper maxLength={13} label="RFC" value={sel.rfc} onChange={(v) => patchSel({ rfc: v })} />
                   </div>
-                  <Field label="Correo" value={sel.email} onChange={(v) => patchSel({ email: v })} />
-                  <Field label="Dirección del sitio" value={sel.addr} onChange={(v) => patchSel({ addr: v })} />
+                  <Field type="email" label="Correo" value={sel.email} onChange={(v) => patchSel({ email: v })} link={{ label: "Escribir", href: `mailto:${sel.email}` }} />
+                  <Field type="url" label="Sitio web" value={sel.web ?? ""} onChange={(v) => patchSel({ web: v })} placeholder="www.cliente.mx" link={{ label: "Abrir", href: webHref(sel.web ?? "") }} />
+                  <Field label="Dirección del sitio" value={sel.addr} onChange={(v) => patchSel({ addr: v })} link={{ label: "Maps", href: mapsHref(sel.addr) }} />
                   <label className="block">
                     <span className="mb-[3px] block text-[10px] font-semibold uppercase leading-none tracking-[.06em] text-ink-7">
                       Notas de acceso / condiciones
