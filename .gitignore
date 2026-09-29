@@ -39,3 +39,8 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# documentos de negocio y paquetes de deploy (no van al repositorio)
+*.pdf
+*.xlsx
+*.zip

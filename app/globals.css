@@ -1,26 +1,92 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+@theme {
+  --font-sans: var(--font-barlow), system-ui, sans-serif;
+  --font-cond: var(--font-barlow-condensed), sans-serif;
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+  /* Marca */
+  --color-brand: #cb2027;
+  --color-brand-dark: #a91a20;
+  --color-brand-bg: #fdeced;
+  --color-ink: #23262b;
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  /* Semánticos */
+  --color-ok: #1f7a4d;
+  --color-ok-bg: #e8f5ee;
+  --color-ok-soft: #f4fbf7;
+  --color-ok-border: #cfe6da;
+  --color-warn: #a2670a;
+  --color-warn-bg: #fff3e0;
+  --color-purple: #6b3f9e;
+  --color-purple-bg: #f3ecfa;
+  --color-wa: #25d366;
+
+  /* Neutros de texto */
+  --color-ink-2: #42474e;
+  --color-ink-3: #5c6169;
+  --color-ink-4: #6d737c;
+  --color-ink-5: #7d848e;
+  --color-ink-6: #8b929c;
+  --color-ink-7: #9aa0a9;
+  --color-ink-8: #a2a8b2;
+  --color-ink-9: #c8ccd2;
+
+  /* Fondos y bordes */
+  --color-page: #eceef1;
+  --color-line: #dfe3e8;
+  --color-line-2: #e2e5ea;
+  --color-line-3: #e9ecef;
+  --color-line-4: #eff1f4;
+  --color-line-5: #f2f4f6;
+  --color-soft: #f1f3f5;
+  --color-soft-2: #f7f8fa;
+  --color-soft-3: #fafbfc;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-page);
+  color: var(--color-ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+@keyframes dash {
+  to {
+    stroke-dashoffset: -24;
+  }
+}
+
+@keyframes pulseRing {
+  0% {
+    box-shadow: 0 0 0 0 rgba(203, 32, 39, 0.45);
+  }
+  70% {
+    box-shadow: 0 0 0 12px rgba(203, 32, 39, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(203, 32, 39, 0);
+  }
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(14px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.animate-dash {
+  animation: dash 1s linear infinite;
+}
+.animate-pulse-ring {
+  animation: pulseRing 2s infinite;
+}
+.animate-pulse-ring-slow {
+  animation: pulseRing 2.4s infinite;
+}
+.animate-slide-up {
+  animation: slideUp 0.22s ease-out;
 }
