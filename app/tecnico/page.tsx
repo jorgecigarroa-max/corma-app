@@ -20,7 +20,26 @@ import {
 } from "@/lib/data";
 import { PhoneFrame, Pill, StatusPill } from "@/components/ui";
 
-type Screen = "lista" | "checkup" | "detalle" | "survey" | "cert";
+type Screen = "lista" | "checkup" | "detalle" | "cam" | "survey" | "cert";
+
+// ——— Evidencia verificable (C-06): cada foto nace con folio y sello de integridad ———
+interface EvPhoto {
+  id: string;
+  tag: "ANTES" | "DESPUÉS";
+  label: string;
+  time: string; // hh:mm:ss del sello
+  grad: string;
+  code: string; // folio de evidencia
+  hash: string; // sello de integridad (SHA-256 en producción)
+}
+
+const hexBlock = () => Math.floor(Math.random() * 0xffff).toString(16).padStart(4, "0");
+const makeHash = () => Array.from({ length: 4 }, hexBlock).join(":");
+
+const initialPhotos: EvPhoto[] = [
+  { id: "ev1", tag: "ANTES", label: "Estación 3 · perímetro", time: "11:41:07", grad: "from-[#dfe4e8] to-[#c9d0d6]", code: "EV-8841", hash: "3f2a:91cc:07de:5ab1" },
+  { id: "ev2", tag: "DESPUÉS", label: "Bodega · est. de cebo", time: "12:47:12", grad: "from-[#e2e6df] to-[#ccd3ca]", code: "EV-8842", hash: "b7d4:2e08:c913:44af" },
+];
 type Tab = "hoy" | "ruta" | "inv" | "perfil";
 
 const ME = "t3"; // Ana Delgado · Unidad 02
@@ -49,6 +68,8 @@ export default function TecnicoPage() {
   const [checkupDone, setCheckupDone] = useState(false);
   const [answers, setAnswers] = useState<Record<number, number>>({});
   const [notes, setNotes] = useState("");
+  const [photos, setPhotos] = useState<EvPhoto[]>(initialPhotos);
+  const [verifyId, setVerifyId] = useState<string | null>(null);
 
   const sel = myStops.find((s) => s.id === selId) ?? myStops[0];
   const checks = checksFor(sel.type);
@@ -64,7 +85,27 @@ export default function TecnicoPage() {
     setStarted(false);
     setAnswers({});
     setNotes("");
+    setPhotos(initialPhotos);
+    setVerifyId(null);
   };
+
+  const capturePhoto = () => {
+    const now = new Date().toLocaleTimeString("es-MX", { hour12: false });
+    const p: EvPhoto = {
+      id: `ev${Date.now()}`,
+      tag: started ? "DESPUÉS" : "ANTES",
+      label: `Área tratada · captura ${photos.length + 1}`,
+      time: now,
+      grad: photos.length % 2 ? "from-[#dfe4e8] to-[#c9d0d6]" : "from-[#e2e6df] to-[#ccd3ca]",
+      code: `EV-${8841 + photos.length}`,
+      hash: makeHash(),
+    };
+    setPhotos((prev) => [...prev, p]);
+    setVerifyId(p.id); // muestra de inmediato que la foto nació verificable
+    setScreen("detalle");
+  };
+
+  const verifyPhoto = photos.find((p) => p.id === verifyId) ?? null;
 
   const back = () => {
     setScreen("lista");
@@ -394,22 +435,22 @@ export default function TecnicoPage() {
 
           <SectionLabel>Evidencia del trabajo (CAM sellada)</SectionLabel>
           <div className="grid grid-cols-2 gap-2">
-            {(
-              [
-                ["ANTES", "Estación 3 · perímetro", "11:41:07", "from-[#dfe4e8] to-[#c9d0d6]"],
-                ["DESPUÉS", "Bodega · est. de cebo", "12:47:12", "from-[#e2e6df] to-[#ccd3ca]"],
-              ] as const
-            ).map(([tag, label, time, grad]) => (
-              <div key={tag} className={`relative h-[148px] overflow-hidden rounded-[11px] bg-gradient-to-br ${grad}`}>
+            {photos.map((p) => (
+              <button
+                key={p.id}
+                onClick={() => setVerifyId((v) => (v === p.id ? null : p.id))}
+                className={`relative h-[148px] cursor-pointer overflow-hidden rounded-[11px] bg-gradient-to-br text-left ${p.grad}`}
+                style={{ outline: verifyId === p.id ? "2px solid #cb2027" : "none", outlineOffset: 1 }}
+              >
                 <span className="absolute right-[6px] top-[6px] rounded bg-white/85 px-[5px] py-[2px] text-[9px] font-bold text-ink-4">
-                  {tag}
+                  {p.tag}
                 </span>
-                <div className="p-[7px] text-[10.5px] font-semibold text-ink-3">{label}</div>
+                <div className="p-[7px] text-[10.5px] font-semibold text-ink-3">{p.label}</div>
                 {/* Sello tipo Timemark: hora grande + fecha, ubicación y GPS, verificado CORMA */}
                 <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-[#111417]/85 via-[#111417]/60 to-transparent px-2 pb-[6px] pt-5">
                   <div className="flex items-end gap-[6px]">
                     <span className="border-l-[3px] border-[#f5b50a] pl-[6px] font-cond text-[21px] font-bold leading-none text-white">
-                      {time.slice(0, 5)}
+                      {p.time.slice(0, 5)}
                     </span>
                     <span className="pb-[1px] text-[9px] font-semibold leading-[1.3] text-white/90">
                       12 ago
@@ -425,20 +466,54 @@ export default function TecnicoPage() {
                       25.5541, -103.4842 · ±4 m
                     </span>
                     <span className="flex items-center gap-[3px] rounded-[3px] bg-brand px-[4px] py-[2px] text-[7.5px] font-bold uppercase leading-none tracking-[.03em] text-white">
-                      ✓ CORMA · Foto real
+                      ✓ {p.code}
                     </span>
                   </div>
                 </div>
-              </div>
+              </button>
             ))}
           </div>
-          <button className="mt-2 flex h-10 w-full cursor-pointer items-center justify-center gap-2 rounded-[11px] border border-dashed border-[#d4d9df] bg-white text-[12.5px] font-semibold text-ink-4">
+          <div className="mt-[6px] text-center text-[10px] font-medium leading-none text-ink-7">
+            Toca una foto para verificar su sello
+          </div>
+
+          {verifyPhoto && (
+            <div className="mt-2 rounded-[12px] border border-ok-border bg-ok-soft p-3">
+              <div className="mb-2 flex items-center gap-2">
+                <span className="flex h-6 w-6 flex-none items-center justify-center rounded-full bg-ok text-[12px] font-bold text-white">✓</span>
+                <span className="flex-1 text-[12.5px] font-bold leading-[1.2] text-[#1f6b47]">
+                  Evidencia {verifyPhoto.code} · sello íntegro
+                </span>
+              </div>
+              {[
+                ["Orden", `${sel.folio} · ${sel.client}`],
+                ["Capturada", `12 ago 2026 · ${verifyPhoto.time} · Ana Delgado (Unidad 02)`],
+                ["GPS", "25.5541, -103.4842 · ±4 m — coincide con el sitio ✓"],
+                ["Sello de integridad", verifyPhoto.hash],
+                ["Origen", "CAM CORMA · sin galería, sin edición"],
+              ].map(([k, v]) => (
+                <div key={k} className="flex justify-between gap-3 border-b border-ok-border py-[5px] text-[11px] last:border-0">
+                  <span className="flex-none font-medium text-ink-6">{k}</span>
+                  <span className="text-right font-semibold text-ink-2">{v}</span>
+                </div>
+              ))}
+              <div className="mt-2 text-[10px] font-medium leading-[1.4] text-ink-6">
+                Cualquier cambio a la imagen rompe el sello y la foto se marca como no confiable. En producción, el
+                certificado lleva un QR para que el cliente o un auditor haga esta misma verificación.
+              </div>
+            </div>
+          )}
+
+          <button
+            onClick={() => setScreen("cam")}
+            className="mt-2 flex h-10 w-full cursor-pointer items-center justify-center gap-2 rounded-[11px] border border-dashed border-[#d4d9df] bg-white text-[12.5px] font-semibold text-ink-4"
+          >
             📷 Tomar foto con sello GPS + hora
           </button>
           <div className="mt-2 rounded-[10px] bg-soft-3 px-3 py-2 text-[11px] font-medium leading-[1.4] text-ink-6">
-            Sello integrado al estilo Timemark (la app que hoy usa el equipo), pero nativo: hora, fecha, dirección,
-            coordenadas y verificación CORMA quedan grabados en la foto y ligados a la orden — sin app externa y sin
-            fotos de galería. Mínimo 1 antes y 1 después por área tratada
+            Cámara integrada (sustituye la app externa de sello): cada foto nace con folio, hora, dirección, GPS y
+            sello de integridad, ligada a la orden y verificable desde la app. Sin galería. Mínimo 1 antes y 1
+            después por área tratada
             {(sel.type === "Industrial" || sel.type === "Agropecuario") && "; en sitios BPP la evidencia es parte del entregable"}
             .
           </div>
@@ -464,6 +539,64 @@ export default function TecnicoPage() {
           >
             Check-out · cuestionario y certificado
           </button>
+        </div>
+      )}
+
+      {/* ——— HOY · Cámara sellada (simulación) ——— */}
+      {tab === "hoy" && screen === "cam" && (
+        <div className="flex flex-1 flex-col bg-[#0c0e10]">
+          <div className="flex items-center px-4 pb-2 pt-3">
+            <button onClick={() => setScreen("detalle")} className="cursor-pointer text-[13px] font-semibold text-white/80">
+              ✕ Cancelar
+            </button>
+            <div className="flex-1 text-center text-[12px] font-bold uppercase tracking-[.06em] text-white/90">
+              CAM sellada · {sel.folio}
+            </div>
+            <span className="w-[64px] text-right text-[10px] font-semibold text-[#4cd08a]">● GPS fijo</span>
+          </div>
+
+          {/* Visor */}
+          <div className="relative mx-3 flex-1 overflow-hidden rounded-[14px] bg-gradient-to-br from-[#2a2f34] to-[#171a1d]">
+            <div className="absolute inset-0 grid grid-cols-3 grid-rows-3">
+              {Array.from({ length: 9 }, (_, i) => (
+                <span key={i} className="border border-white/[0.06]" />
+              ))}
+            </div>
+            <span className="absolute left-1/2 top-1/2 h-10 w-10 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white/40" />
+            {/* Previsualización del sello en vivo */}
+            <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 to-transparent px-3 pb-2 pt-6">
+              <div className="flex items-end gap-2">
+                <span className="border-l-4 border-[#f5b50a] pl-2 font-cond text-[26px] font-bold leading-none text-white">
+                  {new Date().toLocaleTimeString("es-MX", { hour12: false }).slice(0, 5)}
+                </span>
+                <span className="pb-[1px] text-[10px] font-semibold leading-[1.3] text-white/90">
+                  12 ago
+                  <br />
+                  2026
+                </span>
+              </div>
+              <div className="mt-1 text-[10px] font-semibold text-white/90">{sel.addr}</div>
+              <div className="flex items-center justify-between">
+                <span className="font-cond text-[10px] text-white/70">25.5541, -103.4842 · ±4 m</span>
+                <span className="rounded-[3px] bg-brand px-[5px] py-[2px] text-[8px] font-bold uppercase text-white">
+                  Sello CORMA
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Obturador */}
+          <div className="flex flex-col items-center gap-2 py-4">
+            <button
+              onClick={capturePhoto}
+              className="flex h-[62px] w-[62px] cursor-pointer items-center justify-center rounded-full border-4 border-white/90 bg-transparent"
+            >
+              <span className="block h-[46px] w-[46px] rounded-full bg-white" />
+            </button>
+            <span className="px-6 text-center text-[10px] font-medium leading-[1.4] text-white/50">
+              El sello y el folio se graban en la imagen al capturar · galería deshabilitada
+            </span>
+          </div>
         </div>
       )}
 
@@ -565,7 +698,7 @@ export default function TecnicoPage() {
               ["Check-out", "12:58 · cuestionario aplicado"],
               ["Tiempo en servicio", "1 h 20 min"],
               ["Producto", "Cipermetrina 10% EC"],
-              ["Evidencia", "4 fotos selladas GPS + hora"],
+              ["Evidencia", `${photos.length} fotos selladas · folios verificables`],
               ["Próximo servicio", "9 de septiembre"],
             ].map(([k, v]) => (
               <div key={k} className="flex justify-between gap-3 border-b border-line-5 py-[7px]">
