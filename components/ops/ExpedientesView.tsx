@@ -1,9 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { availabilitySummary, emptyAvailability, expedientes as baseExpedientes, expEventColors, routeOptions, typeColor } from "@/lib/data";
 import type { Availability, ExpEvent, ExpEventKind, Expediente, NotifyChannel, SchedMode, StopWindow, Zone } from "@/lib/data";
+import { addEventoDb, createExpedienteDb, fetchExpedientes, fmtISO, saveExpedienteDb } from "@/lib/expedientesDb";
 import { Pill } from "@/components/ui";
+
+type DataSource = "cargando" | "db" | "demo";
 
 const emptyForm = {
   client: "",
@@ -30,12 +33,6 @@ const waHref = (phone: string) => {
 };
 const webHref = (url: string) => (/^https?:\/\//.test(url) ? url : `https://${url}`);
 
-const monthsEs = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
-/** "2026-09-28" → "28 sep 2026" (para mostrar fechas del calendario en el historial). */
-const fmtISO = (iso: string) => {
-  const [y, m, d] = iso.split("-");
-  return m ? `${+d} ${monthsEs[+m - 1]} ${y}` : iso;
-};
 const todayISO = () => new Date().toISOString().slice(0, 10);
 
 type FieldType = "text" | "date" | "tel" | "email" | "url";
@@ -242,6 +239,26 @@ function AvailabilityForm({ value, onChange, compact }: { value: Availability; o
 export function ExpedientesView() {
   const [items, setItems] = useState<Expediente[]>(baseExpedientes);
   const [selId, setSelId] = useState(baseExpedientes[0].id);
+  const [source, setSource] = useState<DataSource>("cargando");
+  const [saving, setSaving] = useState(false);
+  const [dbError, setDbError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    fetchExpedientes()
+      .then((exps) => {
+        if (!alive) return;
+        if (exps.length) {
+          setItems(exps);
+          setSelId(exps[0].id);
+        }
+        setSource("db");
+      })
+      .catch(() => alive && setSource("demo"));
+    return () => {
+      alive = false;
+    };
+  }, []);
   const [q, setQ] = useState("");
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState<Record<string, string>>(emptyForm);
@@ -264,8 +281,8 @@ export function ExpedientesView() {
     setSavedAt(null);
   };
 
-  const createExpediente = () => {
-    if (!form.client.trim()) return;
+  const createExpediente = async () => {
+    if (!form.client.trim() || saving) return;
     const nuevo: Expediente = {
       ...(emptyForm as unknown as Expediente),
       ...(form as unknown as Expediente),
@@ -278,6 +295,16 @@ export function ExpedientesView() {
       avail: { ...avail, route: avail.route || routeOptions[0] },
       events: [],
     };
+    setSaving(true);
+    setDbError(null);
+    if (source === "db") {
+      try {
+        nuevo.id = await createExpedienteDb(nuevo);
+      } catch {
+        setDbError("No se pudo guardar en la base; el alta quedó sólo en esta sesión.");
+      }
+    }
+    setSaving(false);
     setItems((prev) => [nuevo, ...prev]);
     setSelId(nuevo.id);
     setCreating(false);
@@ -285,14 +312,25 @@ export function ExpedientesView() {
     setAvail(emptyAvailability);
   };
 
-  const addEvent = () => {
-    if (!evTitle.trim()) return;
+  const addEvent = async () => {
+    if (!evTitle.trim() || saving) return;
+    const fecha = evDate || todayISO();
     const ev: ExpEvent = {
-      date: fmtISO(evDate || todayISO()),
+      date: fmtISO(fecha),
       kind: evKind,
       title: evTitle,
       detail: evDetail || "Capturado desde el panel.",
     };
+    setSaving(true);
+    setDbError(null);
+    if (source === "db") {
+      try {
+        await addEventoDb(sel.id, { fecha, kind: evKind, title: ev.title, detail: ev.detail });
+      } catch {
+        setDbError("No se pudo guardar el evento en la base; quedó sólo en esta sesión.");
+      }
+    }
+    setSaving(false);
     patchSel({ events: [ev, ...sel.events] });
     setAddingEvent(false);
     setEvDate(todayISO());
@@ -300,15 +338,52 @@ export function ExpedientesView() {
     setEvDetail("");
   };
 
+  const saveChanges = async () => {
+    if (saving) return;
+    setSaving(true);
+    setDbError(null);
+    if (source === "db") {
+      try {
+        await saveExpedienteDb(sel);
+      } catch {
+        setDbError("No se pudo guardar en la base; los cambios quedaron sólo en esta sesión.");
+      }
+    }
+    setSaving(false);
+    setSavedAt("ahora");
+  };
+
   const kinds = Object.keys(expEventColors) as ExpEventKind[];
 
   return (
     <section className="flex-1 overflow-auto px-6 py-[22px]">
-      <h1 className="mb-[3px] text-[26px] font-bold leading-[1.1]">Expedientes de servicio</h1>
+      <div className="mb-[3px] flex items-center gap-[10px]">
+        <h1 className="text-[26px] font-bold leading-[1.1]">Expedientes de servicio</h1>
+        {source === "db" && (
+          <span className="flex items-center gap-[6px] rounded-full bg-ok-bg px-[10px] py-[5px] text-[10.5px] font-bold uppercase leading-none tracking-[.05em] text-ok">
+            <span className="block h-[6px] w-[6px] rounded-full bg-ok" /> Base de datos en vivo
+          </span>
+        )}
+        {source === "demo" && (
+          <span className="rounded-full bg-[#fff3e0] px-[10px] py-[5px] text-[10.5px] font-bold uppercase leading-none tracking-[.05em] text-warn">
+            Datos demo · sin conexión
+          </span>
+        )}
+        {source === "cargando" && (
+          <span className="rounded-full bg-soft px-[10px] py-[5px] text-[10.5px] font-bold uppercase leading-none tracking-[.05em] text-ink-6">
+            Conectando…
+          </span>
+        )}
+      </div>
       <p className="mb-[18px] text-[13px] font-medium leading-none text-ink-5">
         Historial completo por cliente: primera revisión, aplicaciones, seguimiento, evidencia, póliza y generales ·
-        editable para el llenado de la cartera actual
+        {source === "db" ? " las capturas se guardan en la base del proyecto" : " editable para el llenado de la cartera actual"}
       </p>
+      {dbError && (
+        <div className="mb-3 rounded-[10px] border border-[#f2dcdd] bg-[#fbf3f3] px-3 py-2 text-[12px] font-semibold text-brand">
+          {dbError}
+        </div>
+      )}
 
       <div className="grid items-start gap-[14px]" style={{ gridTemplateColumns: "290px 1fr" }}>
         {/* Lista de clientes */}
@@ -536,10 +611,10 @@ export function ExpedientesView() {
                   </label>
                 </div>
                 <button
-                  onClick={() => setSavedAt("ahora")}
+                  onClick={saveChanges}
                   className="mt-3 h-9 w-full cursor-pointer rounded-[9px] bg-ink text-xs font-bold text-white"
                 >
-                  {savedAt ? "✓ Cambios guardados" : "Guardar cambios"}
+                  {saving ? "Guardando…" : savedAt ? "✓ Cambios guardados" : source === "db" ? "Guardar cambios en la base" : "Guardar cambios"}
                 </button>
               </div>
             </div>
