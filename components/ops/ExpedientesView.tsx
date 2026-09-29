@@ -1,8 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { expedientes as baseExpedientes, expEventColors, typeColor } from "@/lib/data";
-import type { ExpEvent, ExpEventKind, Expediente } from "@/lib/data";
+import { availabilitySummary, emptyAvailability, expedientes as baseExpedientes, expEventColors, routeOptions, typeColor } from "@/lib/data";
+import type { Availability, ExpEvent, ExpEventKind, Expediente, NotifyChannel, SchedMode, StopWindow, Zone } from "@/lib/data";
 import { Pill } from "@/components/ui";
 
 const emptyForm = {
@@ -78,12 +78,131 @@ function Select({
   );
 }
 
+const dayOpts = Array.from({ length: 31 }, (_, i) => String(i + 1));
+const hourOpts = ["06:00", "07:00", "08:00", "09:00", "10:00", "12:00", "14:00", "16:00", "18:00", "20:00", "22:00"];
+
+/** Disponibilidad del cliente: cuatro preguntas en lenguaje de operación (sin pensar en programación). */
+function AvailabilityForm({ value, onChange, compact }: { value: Availability; onChange: (a: Availability) => void; compact?: boolean }) {
+  const set = (patch: Partial<Availability>) => onChange({ ...value, ...patch });
+  const setWin = (i: number, patch: Partial<StopWindow>) =>
+    set({ windows: value.windows.map((w, j) => (j === i ? { ...w, ...patch } : w)) });
+  const modes: SchedMode[] = ["Cuando el cliente nos avise", "Fecha fija pactada", "Cualquier día hábil"];
+  const q = (n: number, text: string) => (
+    <div className="mb-[6px] flex items-center gap-2 text-[12px] font-bold leading-none text-ink-2">
+      <span className="flex h-[18px] w-[18px] items-center justify-center rounded-full bg-brand text-[10px] text-white">{n}</span>
+      {text}
+    </div>
+  );
+  return (
+    <div className={`grid gap-3 ${compact ? "grid-cols-1" : "grid-cols-2"}`}>
+      {/* 1 · Cuándo */}
+      <div className="rounded-[10px] border border-line-3 bg-soft-3 p-3">
+        {q(1, "¿Cuándo podemos ir?")}
+        <div className="flex flex-col gap-[5px]">
+          {modes.map((m) => (
+            <label key={m} className="flex cursor-pointer items-center gap-2 text-[12px] font-semibold text-ink-3">
+              <input type="radio" name={`mode-${compact ? "d" : "f"}`} checked={value.mode === m} onChange={() => set({ mode: m })} className="accent-brand" />
+              {m}
+            </label>
+          ))}
+        </div>
+        <div className="mt-2 text-[10.5px] font-medium leading-[1.4] text-ink-6">
+          {value.mode === "Cuando el cliente nos avise"
+            ? "El agente no genera OS por su cuenta: espera el aviso y pide confirmación martes o miércoles antes del corte del sábado."
+            : value.mode === "Fecha fija pactada"
+              ? "La fecha del contrato manda; si no se puede cumplir, el agente escala al coordinador."
+              : "El agente propone la fecha según la póliza y la ruta de la zona."}
+        </div>
+      </div>
+
+      {/* 2 · Paros */}
+      <div className="rounded-[10px] border border-line-3 bg-soft-3 p-3">
+        {q(2, "¿Hay días u horas en que el cliente para o no recibe?")}
+        {value.windows.length === 0 && (
+          <div className="mb-2 text-[11px] font-medium text-ink-6">Sin ventanas de paro registradas.</div>
+        )}
+        {value.windows.map((w, i) => (
+          <div key={i} className="mb-[6px] flex flex-wrap items-center gap-[6px] text-[11.5px] font-semibold text-ink-3">
+            <span>Del día</span>
+            <select value={w.fromDay} onChange={(e) => setWin(i, { fromDay: e.target.value })} className="h-7 rounded-[7px] border border-line-2 bg-white px-1 text-xs font-bold outline-none focus:border-brand">
+              {dayOpts.map((d) => <option key={d}>{d}</option>)}
+            </select>
+            <span>al</span>
+            <select value={w.toDay} onChange={(e) => setWin(i, { toDay: e.target.value })} className="h-7 rounded-[7px] border border-line-2 bg-white px-1 text-xs font-bold outline-none focus:border-brand">
+              {dayOpts.map((d) => <option key={d}>{d}</option>)}
+            </select>
+            <span>de cada mes, a partir de las</span>
+            <select value={w.fromHour} onChange={(e) => setWin(i, { fromHour: e.target.value })} className="h-7 rounded-[7px] border border-line-2 bg-white px-1 text-xs font-bold outline-none focus:border-brand">
+              {hourOpts.map((h) => <option key={h}>{h}</option>)}
+            </select>
+            <button
+              onClick={() => set({ windows: value.windows.filter((_, j) => j !== i) })}
+              className="ml-auto h-7 cursor-pointer rounded-[7px] border border-line-2 bg-white px-2 text-[11px] font-semibold text-ink-6"
+            >
+              Quitar
+            </button>
+          </div>
+        ))}
+        <button
+          onClick={() => set({ windows: [...value.windows, { fromDay: "15", toDay: "20", fromHour: "20:00" }] })}
+          className="h-7 cursor-pointer rounded-[7px] border border-dashed border-line-2 bg-white px-3 text-[11px] font-bold text-brand"
+        >
+          + Otra ventana
+        </button>
+      </div>
+
+      {/* 3 · Cómo avisa */}
+      <div className="rounded-[10px] border border-line-3 bg-soft-3 p-3">
+        {q(3, "¿Cómo nos avisa o confirma el cliente?")}
+        <div className="mb-2 flex gap-[6px]">
+          {(["WhatsApp", "Llamada", "Correo"] as NotifyChannel[]).map((ch) => (
+            <button
+              key={ch}
+              onClick={() => set({ channel: ch })}
+              className={`h-7 cursor-pointer rounded-full px-3 text-[11px] font-bold ${value.channel === ch ? "bg-ink text-white" : "border border-line-2 bg-white text-ink-4"}`}
+            >
+              {ch}
+            </button>
+          ))}
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <Field label="Quién avisa" value={value.notifyContact} onChange={(v) => set({ notifyContact: v })} placeholder="Nombre" />
+          <Field label="Teléfono / WhatsApp" value={value.notifyPhone} onChange={(v) => set({ notifyPhone: v })} placeholder="871 …" />
+        </div>
+      </div>
+
+      {/* 4 · Zona y ruta */}
+      <div className="rounded-[10px] border border-line-3 bg-soft-3 p-3">
+        {q(4, "Zona y ruta")}
+        <div className="mb-2 flex gap-[6px]">
+          {(["Local", "Foráneo"] as Zone[]).map((z) => (
+            <button
+              key={z}
+              onClick={() => set({ zone: z })}
+              className={`h-7 cursor-pointer rounded-full px-3 text-[11px] font-bold ${value.zone === z ? "bg-ink text-white" : "border border-line-2 bg-white text-ink-4"}`}
+            >
+              {z}
+            </button>
+          ))}
+        </div>
+        <Select label="Ruta" value={value.route || routeOptions[0]} options={routeOptions} onChange={(v) => set({ route: v })} />
+        {value.zone === "Foráneo" && (
+          <div className="mt-2 text-[10.5px] font-medium leading-[1.4] text-ink-6">
+            Foráneo: sólo se programa en día de ruta foránea, agrupado con su zona y con unidad y viáticos confirmados. Nunca se recorre un día.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function ExpedientesView() {
   const [items, setItems] = useState<Expediente[]>(baseExpedientes);
   const [selId, setSelId] = useState(baseExpedientes[0].id);
   const [q, setQ] = useState("");
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState<Record<string, string>>(emptyForm);
+  const [avail, setAvail] = useState<Availability>(emptyAvailability);
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [addingEvent, setAddingEvent] = useState(false);
   const [evKind, setEvKind] = useState<ExpEventKind>("Seguimiento");
@@ -112,12 +231,14 @@ export function ExpedientesView() {
       policy: form.policy as Expediente["policy"],
       policyEnd: form.policyEnd || "—",
       rfc: form.rfc || "—",
+      avail: { ...avail, route: avail.route || routeOptions[0] },
       events: [],
     };
     setItems((prev) => [nuevo, ...prev]);
     setSelId(nuevo.id);
     setCreating(false);
     setForm(emptyForm);
+    setAvail(emptyAvailability);
   };
 
   const addEvent = () => {
@@ -208,6 +329,14 @@ export function ExpedientesView() {
               <Field wide label="Dirección del sitio" value={form.addr} onChange={(v) => setForm((f) => ({ ...f, addr: v }))} />
               <Field wide label="Notas de acceso / condiciones" value={form.notes} onChange={(v) => setForm((f) => ({ ...f, notes: v }))} />
             </div>
+
+            <div className="mb-1 mt-5 text-[15px] font-bold leading-none">Disponibilidad y programación</div>
+            <div className="mb-3 text-[11.5px] font-medium leading-[1.4] text-ink-6">
+              Cuatro preguntas en lenguaje de operación. De aquí salen las variantes de programación del agente
+              (a demanda, fecha pactada, ventanas de paro, zona y ruta); quien captura no tiene que pensar en programación.
+            </div>
+            <AvailabilityForm value={avail} onChange={setAvail} />
+
             <button
               onClick={createExpediente}
               className={`mt-4 h-10 rounded-[9px] px-5 text-[13px] font-bold text-white ${
@@ -308,6 +437,25 @@ export function ExpedientesView() {
                   El agente de fechas (vista Seguimiento) usa este tipo de póliza y vigencia para programar el próximo
                   servicio y los avisos.
                 </div>
+              </div>
+
+              <div className="rounded-xl border border-line-2 bg-white px-4 py-[15px]">
+                <div className="mb-2 flex items-center gap-2">
+                  <span className="text-sm font-bold leading-none">Disponibilidad y programación</span>
+                  <div className="flex-1" />
+                  <Pill bg={sel.avail.zone === "Foráneo" ? "#e6f4f3" : "#eef0f3"} fg={sel.avail.zone === "Foráneo" ? "#1f7a72" : "#6d737c"}>
+                    {sel.avail.zone}
+                  </Pill>
+                </div>
+                <div className="mb-3 rounded-[8px] bg-soft-3 px-[10px] py-2 text-[11px] font-semibold leading-[1.4] text-ink-3">
+                  {availabilitySummary(sel.avail)}
+                  {sel.avail.notifyContact && (
+                    <span className="block font-medium text-ink-6">
+                      Avisa/confirma: {sel.avail.notifyContact} · {sel.avail.channel} {sel.avail.notifyPhone}
+                    </span>
+                  )}
+                </div>
+                <AvailabilityForm compact value={sel.avail} onChange={(a) => patchSel({ avail: a })} />
               </div>
 
               <div className="rounded-xl border border-line-2 bg-white px-4 py-[15px]">

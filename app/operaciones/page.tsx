@@ -68,7 +68,7 @@ export default function OperacionesPage() {
     setSection("agenda");
   };
 
-  const followUp = contracts.filter((c) => c.state === "Por programar" || c.state === "Vencido").length;
+  const followUp = contracts.filter((c) => c.state.startsWith("Bloqueada") || c.state === "Vencida" || c.state === "Sin confirmar").length;
   const lowStock = warehouseStock.filter((w) => w.stock < w.min).length;
 
   const nav: { id: Section; label: string; badge: string }[] = [

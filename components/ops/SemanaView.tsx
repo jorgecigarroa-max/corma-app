@@ -16,7 +16,7 @@ export function SemanaView() {
         <div>
           <h1 className="text-[26px] font-bold leading-[1.1] tracking-[-.01em]">Programación semanal</h1>
           <p className="mt-[5px] text-[13px] font-medium leading-none text-ink-5">
-            Semana del 17 al 22 de agosto · {weekTotal} servicios · se genera cada sábado a las 20:00
+            Semana del 17 al 22 de agosto · {weekTotal} servicios · corte sábado 15 ago 20:00 · sólo entran OS confirmadas o propuestas con visto bueno
           </p>
         </div>
         <div className="flex-1" />
@@ -100,8 +100,8 @@ export function SemanaView() {
             Criterios de optimización
           </div>
           <div className="mt-2 text-[12.5px] font-medium leading-[1.55] text-ink-3">
-            Cercanía geográfica por zona, carga pareja entre técnicos, ventanas comprometidas con el cliente y
-            frecuencias de contrato (semanal, quincenal, mensual).
+            Fechas pactadas en contrato mandan; producto reservado en almacén; foráneos sólo en día de ruta foránea
+            agrupados por zona; servicios a demanda confirmados por el cliente a más tardar el miércoles previo al corte.
           </div>
         </div>
         <div className="rounded-xl border border-line-2 bg-white px-4 py-[14px]">

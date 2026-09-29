@@ -833,10 +833,25 @@ export const purchaseReqMeta = {
 };
 
 // ——— C-02 · Agente de seguimiento de fechas (pólizas / igualas / contratos) ———
+// El agente NO programa por su cuenta: propone y valida. Cada OS pasa por tres
+// filtros (contrato · producto · ruta); si alguno falla queda BLOQUEADA con
+// motivo en la bandeja del coordinador. Los servicios "a demanda" requieren
+// confirmación del cliente entre martes y miércoles (3–4 días antes del corte
+// del sábado 20:00); sin confirmación no entran a la semana.
 
 export type PolicyKind = "Iguala mensual" | "Póliza semanal" | "Contrato anual" | "Evento único";
 export type ClientClass = "Cautivo" | "Nuevo";
-export type AgentState = "Programado" | "Aviso enviado" | "Por programar" | "Vencido";
+export type AgentState =
+  | "Confirmada"
+  | "Propuesta lista"
+  | "Sin confirmar"
+  | "Bloqueada: contrato"
+  | "Bloqueada: sin producto"
+  | "Bloqueada: ruta"
+  | "Vencida";
+
+/** Resultado de cada filtro: ok · falla · pendiente (espera al cliente). */
+export type CheckResult = "ok" | "falla" | "pend";
 
 export interface Contract {
   client: string;
@@ -848,46 +863,108 @@ export interface Contract {
   nextDue: string;
   daysTo: number; // días para el vencimiento; negativo = vencido
   state: AgentState;
-  action: string; // última acción del agente
+  zone: Zone;
+  checks: { contrato: CheckResult; producto: CheckResult; ruta: CheckResult };
+  action: string; // última acción del agente / motivo del bloqueo
 }
 
+/** Corte de programación semanal (demo): sábado 20:00; confirmaciones a demanda hasta el miércoles previo. */
+export const weekCutoff = { day: "sáb 15 ago", time: "20:00", confirmFrom: "mar 11 ago", confirmTo: "mié 12 ago" };
+
 export const contracts: Contract[] = [
-  { client: "Bodega Lala Norte", policy: "Póliza semanal", giro: "Industrial", cls: "Cautivo", since: "2023", lastSvc: "12 ago", nextDue: "19 ago", daysTo: 7, state: "Programado", action: "OS-4419 generada y asignada a Unidad 05" },
-  { client: "Empaque Tomatero SA", policy: "Póliza semanal", giro: "Industrial", cls: "Cautivo", since: "2022", lastSvc: "12 ago", nextDue: "19 ago", daysTo: 7, state: "Programado", action: "OS-4402 dentro de la semana BPP" },
-  { client: "Hotel Posada del Río", policy: "Iguala mensual", giro: "Comercial", cls: "Cautivo", since: "2024", lastSvc: "12 ago", nextDue: "9 sep", daysTo: 28, state: "Programado", action: "Próxima OS creada; aviso WhatsApp saldrá el 7 sep" },
-  { client: "Establo San Rafael", policy: "Iguala mensual", giro: "Agropecuario", cls: "Cautivo", since: "2023", lastSvc: "12 ago", nextDue: "9 sep", daysTo: 28, state: "Programado", action: "Ruta agropecuaria del 9 sep reservada" },
-  { client: "Farmacias Delicias", policy: "Contrato anual", giro: "Comercial", cls: "Cautivo", since: "2021", lastSvc: "12 ago", nextDue: "26 ago", daysTo: 14, state: "Aviso enviado", action: "Recordatorio quincenal enviado al responsable sanitario" },
-  { client: "Restaurante El Fogón", policy: "Contrato anual", giro: "Comercial", cls: "Cautivo", since: "2024", lastSvc: "12 ago", nextDue: "26 ago", daysTo: 14, state: "Programado", action: "OS del ciclo quincenal generada" },
-  { client: "Transportes G.L.", policy: "Contrato anual", giro: "Industrial", cls: "Cautivo", since: "2020", lastSvc: "11 sep", nextDue: "9 oct", daysTo: 12, state: "Aviso enviado", action: "Recorrido 47 propuesto; espera confirmación de planta" },
-  { client: "Residencia Fam. Nava", policy: "Evento único", giro: "Residencial", cls: "Nuevo", since: "ago 2026", lastSvc: "12 ago", nextDue: "2 sep", daysTo: 21, state: "Aviso enviado", action: "Seguimiento a 21 días con oferta de iguala enviado" },
-  { client: "Vivero Los Álamos", policy: "Iguala mensual", giro: "Jardín", cls: "Cautivo", since: "2023", lastSvc: "12 ago", nextDue: "16 ago", daysTo: 4, state: "Por programar", action: "Toca en 4 días y no hay OS: propuesta en bandeja del coordinador" },
-  { client: "Clínica Santa Fe", policy: "Contrato anual", giro: "Comercial", cls: "Cautivo", since: "2022", lastSvc: "29 jul", nextDue: "10 ago", daysTo: -2, state: "Vencido", action: "Vencida hace 2 días: alerta al coordinador y aviso al cliente" },
-  { client: "Casa Fam. Escobedo", policy: "Evento único", giro: "Residencial", cls: "Nuevo", since: "ago 2026", lastSvc: "—", nextDue: "15 ago", daysTo: 3, state: "Programado", action: "Primer servicio OS-4437; entra a seguimiento de 21 días" },
+  { client: "Bodega Lala Norte", policy: "Póliza semanal", giro: "Industrial", cls: "Cautivo", since: "2023", lastSvc: "12 ago", nextDue: "19 ago", daysTo: 7, state: "Confirmada", zone: "Local", checks: { contrato: "ok", producto: "ok", ruta: "ok" }, action: "Día fijo de contrato (miércoles BPP) · OS-4419 confirmada por el coordinador y asignada a Unidad 05" },
+  { client: "Empaque Tomatero SA", policy: "Póliza semanal", giro: "Industrial", cls: "Cautivo", since: "2022", lastSvc: "12 ago", nextDue: "19 ago", daysTo: 7, state: "Confirmada", zone: "Local", checks: { contrato: "ok", producto: "ok", ruta: "ok" }, action: "Semana BPP pactada · OS-4402 confirmada, producto reservado en almacén" },
+  { client: "Hotel Posada del Río", policy: "Iguala mensual", giro: "Comercial", cls: "Cautivo", since: "2024", lastSvc: "12 ago", nextDue: "9 sep", daysTo: 28, state: "Propuesta lista", zone: "Local", checks: { contrato: "ok", producto: "ok", ruta: "ok" }, action: "Propuesta para el 9 sep pasa los tres filtros · espera visto bueno del coordinador; aviso WhatsApp saldrá el 7 sep" },
+  { client: "Establo San Rafael", policy: "Iguala mensual", giro: "Agropecuario", cls: "Cautivo", since: "2023", lastSvc: "12 ago", nextDue: "9 sep", daysTo: 28, state: "Bloqueada: ruta", zone: "Foráneo", checks: { contrato: "ok", producto: "ok", ruta: "falla" }, action: "Foráneo (Matamoros): sólo entra en día de ruta agropecuaria con unidad y viáticos confirmados · no se recorre un día; coordinador debe reservar la ruta del 9 sep" },
+  { client: "Farmacias Delicias", policy: "Contrato anual", giro: "Comercial", cls: "Cautivo", since: "2021", lastSvc: "12 ago", nextDue: "26 ago", daysTo: 14, state: "Propuesta lista", zone: "Local", checks: { contrato: "ok", producto: "ok", ruta: "ok" }, action: "Calendario quincenal de contrato · propuesta lista para el corte del sábado; recordatorio enviado al responsable sanitario" },
+  { client: "Restaurante El Fogón", policy: "Contrato anual", giro: "Comercial", cls: "Cautivo", since: "2024", lastSvc: "12 ago", nextDue: "26 ago", daysTo: 14, state: "Bloqueada: sin producto", zone: "Local", checks: { contrato: "ok", producto: "falla", ruta: "ok" }, action: "Gel cucarachicida del plan sin existencia en almacén central · RQ a compras generada; no se programa a ciegas" },
+  { client: "Transportes G.L.", policy: "Contrato anual", giro: "Industrial", cls: "Cautivo", since: "2020", lastSvc: "18 jul", nextDue: "15–20 ago", daysTo: 3, state: "Sin confirmar", zone: "Local", checks: { contrato: "ok", producto: "ok", ruta: "pend" }, action: "A demanda: el cliente para operación del 15 al 20 de cada mes desde las 20:00 · confirmación esperada mar 11 / mié 12; recordatorio enviado a planta" },
+  { client: "Residencia Fam. Nava", policy: "Evento único", giro: "Residencial", cls: "Nuevo", since: "ago 2026", lastSvc: "12 ago", nextDue: "2 sep", daysTo: 21, state: "Propuesta lista", zone: "Local", checks: { contrato: "ok", producto: "ok", ruta: "ok" }, action: "Seguimiento comercial a 21 días con oferta de iguala · sin OS hasta que el cliente acepte" },
+  { client: "Vivero Los Álamos", policy: "Iguala mensual", giro: "Jardín", cls: "Cautivo", since: "2023", lastSvc: "12 ago", nextDue: "16 ago", daysTo: 4, state: "Bloqueada: contrato", zone: "Local", checks: { contrato: "falla", producto: "ok", ruta: "ok" }, action: "La iguala fija el día 16 y cae en domingo · el agente no mueve fechas pactadas: coordinador decide con el cliente (15 o 17 ago)" },
+  { client: "Clínica Santa Fe", policy: "Contrato anual", giro: "Comercial", cls: "Cautivo", since: "2022", lastSvc: "29 jul", nextDue: "10 ago", daysTo: -2, state: "Vencida", zone: "Local", checks: { contrato: "falla", producto: "ok", ruta: "ok" }, action: "Vencida hace 2 días: alerta al coordinador y aviso al cliente · entra como excepción en Programación del día" },
+  { client: "Casa Fam. Escobedo", policy: "Evento único", giro: "Residencial", cls: "Nuevo", since: "ago 2026", lastSvc: "—", nextDue: "15 ago", daysTo: 3, state: "Confirmada", zone: "Local", checks: { contrato: "ok", producto: "ok", ruta: "ok" }, action: "Primer servicio OS-4437 confirmado por el cliente · entra a seguimiento de 21 días" },
 ];
 
 export const agentStateColors: Record<AgentState, [string, string]> = {
-  Programado: ["#e8f5ee", "#1f7a4d"],
-  "Aviso enviado": ["#eef2fb", "#3a4e8c"],
-  "Por programar": ["#fff3e0", "#a2670a"],
-  Vencido: ["#fdeced", "#cb2027"],
+  Confirmada: ["#e8f5ee", "#1f7a4d"],
+  "Propuesta lista": ["#eef2fb", "#3a4e8c"],
+  "Sin confirmar": ["#fff3e0", "#a2670a"],
+  "Bloqueada: contrato": ["#fdeced", "#cb2027"],
+  "Bloqueada: sin producto": ["#fdeced", "#cb2027"],
+  "Bloqueada: ruta": ["#fdeced", "#cb2027"],
+  Vencida: ["#3b1f21", "#ffffff"],
 };
 
-/** Reglas del agente (demo) — las definitivas se validan con CORMA (P-09). */
+export const checkColors: Record<CheckResult, string> = { ok: "#1f7a4d", falla: "#cb2027", pend: "#a2670a" };
+
+/** Cómo decide el agente (demo) — se valida con CORMA (P-09). */
+export const agentFilters: { name: string; rule: string }[] = [
+  { name: "Contrato / póliza", rule: "Si el expediente tiene fecha o ventana pactada (día fijo, semana BPP, horario del cliente), esa fecha manda. El agente no la mueve: si no se puede cumplir, escala al coordinador con la cláusula a la vista." },
+  { name: "Producto", rule: "Antes de emitir la OS revisa existencia en almacén del producto que pide el plan del cliente. Sin existencia o por caducar → 'Bloqueada: sin producto' y RQ a compras; nunca se programa a ciegas." },
+  { name: "Ruta y zona", rule: "Cada cliente tiene zona (local / foráneo) y ruta. Un foráneo sólo se programa en día de ruta foránea, agrupado por zona, con unidad y viáticos confirmados; nunca se 'corre un día'. Un local puede reacomodarse dentro de su misma semana y ruta." },
+  { name: "Confirmación previa al corte", rule: "Los servicios a demanda (el cliente avisa cuándo) deben confirmarse martes o miércoles, 3–4 días antes del corte del sábado 20:00. Sin confirmación quedan 'Sin confirmar' con recordatorio al contacto; si confirman después, entran como excepción y decide el coordinador." },
+];
+
+/** Reglas por tipo de póliza (demo) — se validan con CORMA (P-09). */
 export const agentRules: { policy: PolicyKind; rule: string }[] = [
-  { policy: "Iguala mensual", rule: "Genera la OS 5 días antes de cumplirse 30 del último servicio y manda aviso WhatsApp al cliente 48 h antes de la visita." },
-  { policy: "Póliza semanal", rule: "Ruta fija semanal (giros BPP): si una visita se recorre, se reprograma dentro de la misma semana y se avisa al responsable de planta." },
-  { policy: "Contrato anual", rule: "Calendario pactado en contrato: el día 25 de cada mes genera las OS del mes siguiente y las manda a programación semanal." },
+  { policy: "Iguala mensual", rule: "Propone la OS 5 días antes de cumplirse 30 del último servicio y manda aviso WhatsApp 48 h antes de la visita confirmada." },
+  { policy: "Póliza semanal", rule: "Día fijo pactado (giros BPP): si una visita se recorre, sólo dentro de la misma semana y con aviso al responsable de planta." },
+  { policy: "Contrato anual", rule: "Calendario del contrato: el día 25 propone las OS del mes siguiente; las que pasan los tres filtros van al corte semanal." },
   { policy: "Evento único", rule: "Cliente nuevo: seguimiento a los 21 días con oferta de iguala; al segundo servicio pagado se reclasifica como cautivo." },
 ];
 
 export const agentFeed: { time: string; label: string; note: string }[] = [
-  { time: "6:40", label: "Barrido diario de pólizas y contratos", note: "11 expedientes revisados contra su regla de fechas" },
-  { time: "6:41", label: "OS generadas automáticamente", note: "3 órdenes creadas y enviadas a programación semanal" },
-  { time: "6:42", label: "Alerta: Clínica Santa Fe vencida", note: "Contrato quincenal sin OS desde el 10 ago · escalada al coordinador" },
-  { time: "6:42", label: "Propuesta: Vivero Los Álamos", note: "Iguala toca el 16 ago · propuesta de fecha en bandeja por asignar" },
-  { time: "7:00", label: "Avisos WhatsApp programados", note: "2 recordatorios de visita saldrán 48 h antes de cada servicio" },
+  { time: "6:40", label: "Barrido diario de pólizas y contratos", note: "11 expedientes revisados contra su regla de fechas y sus tres filtros" },
+  { time: "6:41", label: "Propuestas al corte del sábado", note: "3 propuestas pasan contrato · producto · ruta y esperan visto bueno del coordinador" },
+  { time: "6:42", label: "Bloqueo: Restaurante El Fogón", note: "Sin existencia de gel cucarachicida · RQ a compras generada" },
+  { time: "6:42", label: "Bloqueo: Establo San Rafael (foráneo)", note: "Ruta agropecuaria del 9 sep sin unidad confirmada · no se recorre" },
+  { time: "6:43", label: "Bloqueo: Vivero Los Álamos", note: "Fecha pactada cae en domingo · coordinador decide con el cliente" },
+  { time: "7:00", label: "Recordatorio de confirmación", note: "Transportes G.L. (a demanda, paro 15–20): plazo de confirmación vence mié 12" },
   { time: "9:30", label: "Encuesta post-servicio enviada", note: "Farmacias Delicias · 3 días después del cierre del 9 ago (SurveyMonkey)" },
 ];
+
+// ——— Disponibilidad del cliente (alta de expediente) ———
+// Cuatro preguntas en lenguaje de operación; de aquí salen las variantes de programación.
+
+export type SchedMode = "Cuando el cliente nos avise" | "Fecha fija pactada" | "Cualquier día hábil";
+export type Zone = "Local" | "Foráneo";
+export type NotifyChannel = "WhatsApp" | "Llamada" | "Correo";
+
+export interface StopWindow {
+  fromDay: string; // día del mes en que inicia el paro
+  toDay: string;
+  fromHour: string; // hora a partir de la cual no reciben (o desde la que sí)
+}
+
+export interface Availability {
+  mode: SchedMode;
+  windows: StopWindow[];
+  channel: NotifyChannel;
+  notifyContact: string; // quién avisa / confirma
+  notifyPhone: string;
+  zone: Zone;
+  route: string;
+}
+
+export const emptyAvailability: Availability = {
+  mode: "Cualquier día hábil",
+  windows: [],
+  channel: "WhatsApp",
+  notifyContact: "",
+  notifyPhone: "",
+  zone: "Local",
+  route: "",
+};
+
+export const routeOptions = ["Ruta Centro", "Ruta Norte industrial", "Ruta Lerdo", "Ruta agropecuaria", "Ruta foránea Matamoros–San Pedro", "Ruta foránea Durango"];
+
+/** Texto corto de la disponibilidad, como lo ve el coordinador. */
+export function availabilitySummary(a: Availability): string {
+  const parts: string[] = [a.mode];
+  if (a.windows.length) parts.push(a.windows.map((w) => `paro del ${w.fromDay} al ${w.toDay} desde las ${w.fromHour}`).join(" · "));
+  parts.push(`${a.zone}${a.route ? " · " + a.route : ""}`);
+  return parts.join(" · ");
+}
 
 // ——— C-01 · Expediente integral del servicio ———
 // Historial completo por cliente: primera revisión, aplicaciones, seguimiento,
@@ -926,6 +1003,7 @@ export interface Expediente {
   addr: string;
   rfc: string;
   notes: string;
+  avail: Availability; // disponibilidad y variantes de programación
   events: ExpEvent[]; // más reciente primero
 }
 
@@ -954,6 +1032,7 @@ export const expedientes: Expediente[] = [
     addr: "Blvd. Miguel Alemán 1204, Gómez Palacio",
     rfc: "HPR-940312-K71",
     notes: "Acceso por andén de servicio; avisar a recepción 30 min antes. Cocina se trata después de las 10:00.",
+    avail: { mode: "Cualquier día hábil", windows: [], channel: "WhatsApp", notifyContact: "Gerardo Luna", notifyPhone: "871 204 1187", zone: "Local", route: "Ruta Centro" },
     events: [
       { date: "12 ago 2026", kind: "Aplicación", title: "Servicio mensual · control integral", detail: "Gel en cocina, estaciones perimetrales 1–6, trampas UV. Sin actividad relevante.", folio: "OS-4412", tech: "Ana Delgado", evid: 6 },
       { date: "9 ago 2026", kind: "Encuesta", title: "Encuesta post-servicio respondida", detail: "Satisfacción 5/5 · NPS 9 · sin hallazgos nuevos reportados.", folio: "SM-0788" },
@@ -978,6 +1057,7 @@ export const expedientes: Expediente[] = [
     addr: "P.I. Lagunero, Gómez Palacio",
     rfc: "BLN-020714-QA3",
     notes: "Sitio BPP: evidencia sellada obligatoria en cada visita; bitácora por estación firmada por supervisor de planta. Auditoría anual en noviembre.",
+    avail: { mode: "Fecha fija pactada", windows: [], channel: "Correo", notifyContact: "Ing. Paola Cedillo", notifyPhone: "871 318 4455", zone: "Local", route: "Ruta Norte industrial" },
     events: [
       { date: "12 ago 2026", kind: "Aplicación", title: "Recorrido semanal · 24 estaciones", detail: "Consumo en estaciones 7 y 15 (25%); nebulización ULV en andén 3.", folio: "OS-4419", tech: "Diana Márquez", evid: 24 },
       { date: "5 ago 2026", kind: "Certificado", title: "Certificado mensual BPP emitido", detail: "Paquete de evidencia y bitácoras jul · enviado a inocuidad y al archivo digital.", folio: "CRM-2026-0790" },
@@ -1000,6 +1080,7 @@ export const expedientes: Expediente[] = [
     addr: "Periférico km 14.5, Lerdo, Dgo.",
     rfc: "TGL-880130-HH0",
     notes: "Recorrido mensual de estaciones cebaderas (vista Estaciones). Acceso con gafete; caseta pide orden de servicio impresa o en app.",
+    avail: { mode: "Cuando el cliente nos avise", windows: [{ fromDay: "15", toDay: "20", fromHour: "20:00" }], channel: "WhatsApp", notifyContact: "Lic. Mario Talamantes", notifyPhone: "871 750 2210", zone: "Local", route: "Ruta Lerdo" },
     events: [
       { date: "11 sep 2026", kind: "Aplicación", title: "Recorrido 46 · estaciones roedor", detail: "Estación 25 al 100% por tercer mes: refuerzo propuesto (ver recomendación en vista Estaciones).", folio: "OS-4501", tech: "Raúl Ávila", evid: 46 },
       { date: "7 ago 2026", kind: "Aplicación", title: "Recorrido 45", detail: "Pico de consumo general en descenso tras refuerzos de julio.", folio: "OS-4390", tech: "Raúl Ávila", evid: 46 },
@@ -1022,6 +1103,7 @@ export const expedientes: Expediente[] = [
     addr: "Fracc. Las Rosas 14, Gómez Palacio",
     rfc: "—",
     notes: "Mascotas: 2 perros — producto de baja toxicidad y tiempo de reentrada por escrito. Candidata a iguala residencial (el agente ofrece a los 21 días).",
+    avail: { mode: "Cualquier día hábil", windows: [], channel: "WhatsApp", notifyContact: "Sra. Leticia Nava", notifyPhone: "871 226 7741", zone: "Local", route: "Ruta Centro" },
     events: [
       { date: "12 ago 2026", kind: "Primera revisión", title: "Diagnóstico y primer servicio", detail: "Cucaracha en cocina (moderada) y alacrán en patio. Gel + aspersión perimetral.", folio: "OS-4431", tech: "Ana Delgado", evid: 4 },
     ],
@@ -1041,6 +1123,7 @@ export const expedientes: Expediente[] = [
     addr: "Ejido La Concha, Matamoros",
     rfc: "ESR-050503-3B9",
     notes: "Unidad de producción con BPP SENASICA: registro sanitario en cada visita. Mosca de establo estacional may–sep; roedor en silos.",
+    avail: { mode: "Fecha fija pactada", windows: [], channel: "Llamada", notifyContact: "MVZ. Homero Cázares", notifyPhone: "871 442 9083", zone: "Foráneo", route: "Ruta agropecuaria" },
     events: [
       { date: "12 ago 2026", kind: "Aplicación", title: "Servicio mensual · corrales y silos", detail: "Larvicida en corrales 1–4; cebo repuesto en silos. Registro SENASICA firmado.", folio: "OS-4401", tech: "Raúl Ávila", evid: 14 },
       { date: "15 jul 2026", kind: "Incidencia", title: "Brote de mosca por lluvia", detail: "Visita extraordinaria: nebulización térmica en corrales; se recomendó drenaje de encharcamiento.", folio: "INC-118", tech: "Raúl Ávila", evid: 7 },
